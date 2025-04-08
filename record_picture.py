@@ -9,13 +9,16 @@ import time
 # Configure the RealSense pipeline
 pipeline = rs.pipeline()
 config = rs.config()
-config.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 30)  
-config.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, 30)   
+config.enable_stream(rs.stream.color, 1280, 720, rs.format.bgr8, 5)  
+config.enable_stream(rs.stream.depth, 1280, 720, rs.format.z16, 5)   
 config.enable_stream(rs.stream.gyro)   
 config.enable_stream(rs.stream.accel)  
 
 # Start the pipeline normally
 profile = pipeline.start(config)
+
+# Get intrinsics
+depth_intrinsics = profile.get_stream(rs.stream.depth).as_video_stream_profile().get_intrinsics()
 
 # Angle tracking variables
 angle = np.array([0.0, 0.0, 0.0])  # Initial roll, pitch, yaw
@@ -44,47 +47,63 @@ def capture():
     """Capture a single frame into a .bag file and save RGB, Depth, and IMU data."""
     global pipeline
 
-    # Stop the current pipeline
-    pipeline.stop()
-
     # Generate a unique folder for this capture
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     folder_name = f"recordings/{timestamp}"
-    os.makedirs(folder_name, exist_ok=True)  
-    bag_path = os.path.join(folder_name, "output.bag")
+    os.makedirs(folder_name, exist_ok=True)
 
-    # Start a new pipeline for just one frame recording
-    temp_pipeline = rs.pipeline()
-    temp_config = rs.config()
-    temp_config.enable_stream(rs.stream.color, 1280, 720, rs.format.bgr8, 5)
-    temp_config.enable_stream(rs.stream.depth, 1280, 720, rs.format.z16, 5)
-    temp_config.enable_stream(rs.stream.gyro)
-    temp_config.enable_stream(rs.stream.accel)
-    temp_config.enable_record_to_file(bag_path)
-    temp_pipeline.start(temp_config)
+    with open(os.path.join(folder_name, "intrinsics.json"), "w") as f:
+        json.dump({
+            "width": depth_intrinsics.width,
+            "height": depth_intrinsics.height,
+            "ppx": depth_intrinsics.ppx,
+            "ppy": depth_intrinsics.ppy,
+            "fx": depth_intrinsics.fx,
+            "fy": depth_intrinsics.fy,
+            "model": str(depth_intrinsics.model),
+            "coeffs": list(depth_intrinsics.coeffs)
+        }, f, indent=4)
+
     try:
+        align = rs.align(rs.stream.color)  # Create the align object (only once, not per frame)
 
-        # Let the camera adjust for 10 frames
-        for _ in range(20):
-            temp_pipeline.wait_for_frames()
-            time.sleep(0.2)
-
-
-        # Capture one frame
-        frames = temp_pipeline.wait_for_frames()
-        depth_frame = frames.get_depth_frame()
-        color_frame = frames.get_color_frame()
+        # In your main loop or in capture():
+        frames = pipeline.wait_for_frames()       # Get the raw frames
+        aligned_frames = align.process(frames)    # Align depth to color
+        depth_frame = aligned_frames.get_depth_frame()
+        color_frame = aligned_frames.get_color_frame()
 
         # Convert images
         depth_image = np.asanyarray(depth_frame.get_data())
         color_image = np.asanyarray(color_frame.get_data())
 
-        # Normalize depth image
-        depth_image_normalized = cv2.normalize(depth_image, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
-
         # Save images
         cv2.imwrite(os.path.join(folder_name, "color_image.png"), color_image)
-        cv2.imwrite(os.path.join(folder_name, "depth_image.png"), depth_image_normalized)
+        cv2.imwrite(os.path.join(folder_name, "depth_image.png"), depth_image)
+
+        depth_frames = []  
+
+        for i in range(20): 
+            frames = pipeline.wait_for_frames()       # Get the raw frames
+            depth_frame = aligned_frames.get_depth_frame()
+            
+            if not depth_frame:
+                continue
+
+            # Convert depth frame to numpy array and store
+            depth_image = np.asanyarray(depth_frame.get_data())
+            depth_frames.append(depth_image)
+
+            print(f"Captured depth frame {i + 1}")
+
+        if len(depth_frames) == 20:
+            # Calculate the average depth frame
+            depth_stack = np.stack(depth_frames, axis=0)
+            average_depth_image = np.mean(depth_stack, axis=0).astype(np.uint16)
+
+            # Save the averaged depth image
+            cv2.imwrite(os.path.join(folder_name, "average_depth_image.png"), average_depth_image)
+            print(f"Averaged depth frame saved in: {folder_name}")
 
         # Save IMU data separately as a JSON file
         imu_data = {
@@ -97,9 +116,7 @@ def capture():
         print(f"Frame saved in: {folder_name}")
 
     finally:
-        # Stop the temporary pipeline and restart the original one
-        temp_pipeline.stop()
-        pipeline.start(config)
+        print("Sacuvano")
 
 # OpenCV Window Loop
 cv2.namedWindow("RealSense Stream", cv2.WINDOW_AUTOSIZE)
