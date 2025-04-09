@@ -99,6 +99,10 @@ def capture():
         if len(depth_frames) == 20:
             # Calculate the average depth frame
             depth_stack = np.stack(depth_frames, axis=0)
+            
+            # Median
+            #average_depth_image = np.median(depth_stack, axis=0).astype(np.uint16)
+            # Average
             average_depth_image = np.mean(depth_stack, axis=0).astype(np.uint16)
 
             # Save the averaged depth image

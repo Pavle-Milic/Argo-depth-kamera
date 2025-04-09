@@ -14,57 +14,92 @@ coverage = []
 
 def extract_point_cloud(folder_path, pitch):
     global camera_h_fov, coverage
-
+ 
     def normalize_angle(angle):
-        while angle <= -180: angle += 360
-        while angle > 180: angle -= 360
+        """Normalize angle to be within the range [-180, 180] degrees."""
+        while angle <= -180:
+            angle += 360
+        while angle > 180:
+            angle -= 360
         return angle
-
-    pc_left_angle = pitch * (180 / math.pi) - half_fov
-    pc_right_angle = pitch * (180 / math.pi) + half_fov
-    print([pc_left_angle, pc_right_angle])
-    l = r = fov1 = fov2 = 0
-    inside = False
+     
+    pc_left_angle=pitch* (180 / math.pi)-half_fov
+    pc_right_angle=pitch* (180 / math.pi)+half_fov
+    print([pc_left_angle,pc_right_angle])
+    l=0
+    r=0
+    fov1=0
+    fov2=0
+    inside=False
     print(coverage)
 
-    if not coverage:
-        coverage.append([pc_left_angle, pc_right_angle])
-    else:
-        pc_left_angle = normalize_angle(pc_left_angle)
-        pc_right_angle = normalize_angle(pc_right_angle)
+    if not coverage :
+        coverage.append([pc_left_angle,pc_right_angle])
+    else :
+        pc_left_angle=normalize_angle(pc_left_angle)
+        pc_right_angle=normalize_angle(pc_right_angle)
+
         for fov in coverage:
-            if pc_left_angle < pc_right_angle:
-                if fov[0] < pc_left_angle and fov[1] > pc_right_angle:
-                    inside = True
+
+            if pc_left_angle<pc_right_angle:
+                
+                if fov[0]<pc_left_angle and fov[1]>pc_right_angle:
+                    inside=True
                     break
-                if pc_left_angle > fov[0] and pc_left_angle < fov[1] and pc_right_angle > fov[1]:
-                    fov1 = fov
-                if pc_right_angle > fov[0] and pc_right_angle < fov[1] and pc_left_angle < fov[0]:
-                    fov2 = fov
+
+                if pc_left_angle>fov[0] and pc_left_angle<fov[1] and fov[0]<fov[1] and pc_right_angle>fov[1]:
+                    fov1=fov
+                    continue
+                if pc_right_angle>fov[0] and pc_right_angle<fov[1] and fov[0]<fov[1] and pc_left_angle<fov[0]:
+                    fov2=fov
+                    continue
+                if pc_left_angle<fov[1] and fov[1]<fov[0] and pc_right_angle>fov[1] and pc_right_angle<fov[0]:
+                    fov1=fov
+                    continue
+                if pc_right_angle>fov[0] and fov[0]>fov[1] and pc_left_angle<fov[0] and pc_left_angle>fov[1]:
+                    fov2=fov
+                    continue
             else:
-                if pc_right_angle < fov[1] and pc_left_angle > fov[0]:
-                    fov1 = fov
 
-        if fov1 == 0 and fov2 == 0 and not inside:
-            coverage.append([pc_left_angle, pc_right_angle])
-        if fov1 != 0:
-            l = abs(pc_left_angle - fov1[1]) / camera_h_fov
+                if pc_left_angle>fov[0] and pc_left_angle>fov[0] and pc_right_angle>fov[0] and pc_right_angle<fov[1]:
+                    fov2=fov
+                    continue
+                if pc_right_angle<fov[0] and pc_right_angle<fov[1] and pc_left_angle>fov[0] and pc_left_angle<fov[1]:
+                    fov1=fov
+                    continue
+                if pc_left_angle>fov[0] and pc_right_angle>fov[1]:
+                    fov1=fov
+                    continue
+                if pc_left_angle<fov[0] and pc_right_angle<fov[1]:
+                    fov2=fov
+                    continue
+        
+        if fov1==0 and fov2==0 and not inside:
+            coverage.append([pc_left_angle,pc_right_angle])
+
+        if fov1 !=0:
+            l=pc_left_angle-fov1[1]
+            l=abs(l)/camera_h_fov
             coverage.remove(fov1)
-        if fov2 != 0:
-            r = abs(fov2[0] - pc_right_angle) / camera_h_fov
+        if fov2 !=0:
+            r=fov2[0]-pc_right_angle
+            r=abs(r)/camera_h_fov
             coverage.remove(fov2)
+    
+    if fov1!=0 and fov2!=0:
+        coverage.append([fov1[0],fov2[1]])
+    elif fov1!=0 and fov2==0:
+        coverage.append([fov1[0],pc_right_angle])
+    elif fov2!=0 and fov1==0:
+        coverage.append([pc_left_angle,fov2[1]])
 
-    if fov1 and fov2:
-        coverage.append([fov1[0], fov2[1]])
-    elif fov1:
-        coverage.append([fov1[0], pc_right_angle])
-    elif fov2:
-        coverage.append([pc_left_angle, fov2[1]])
     if inside:
-        l = r = 0.5
+        l=0.5
+        r=0.5
 
     print(coverage)
-    print(l, r)
+    print(l)
+    print(r)
 
     # Load images
     depth_path = os.path.join(folder_path, "average_depth_image.png")
